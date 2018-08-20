@@ -38,6 +38,7 @@
 #include <GCS_MAVLink/GCS.h>
 #include <AP_SerialManager/AP_SerialManager.h>   // Serial manager library
 #include <AP_GPS/AP_GPS.h>             // ArduPilot GPS library
+#include <AP_PHM/AP_PHM.h>              // ArduPilot PHM library
 #include <DataFlash/DataFlash.h>          // ArduPilot Mega Flash Memory Library
 #include <AP_ADC/AP_ADC.h>             // ArduPilot Mega Analog to Digital Converter Library
 #include <AP_Baro/AP_Baro.h>
@@ -185,6 +186,8 @@ private:
     DataFlash_Class DataFlash;
 
     AP_GPS gps;
+
+    AP_PHM phm;
 
     // flight modes convenience array
     AP_Int8 *flight_modes;
@@ -648,6 +651,9 @@ private:
     void three_hz_loop();
     void one_hz_loop();
     void update_GPS(void);
+    void update_phm();
+    void init_phm();
+    void phm_set_mode();
     void init_simple_bearing();
     void update_simple_mode(void);
     void update_super_simple_bearing(bool force_update);

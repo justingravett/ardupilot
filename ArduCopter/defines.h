@@ -123,6 +123,7 @@ enum mode_reason_t {
     MODE_REASON_AVOIDANCE,
     MODE_REASON_AVOIDANCE_RECOVERY,
     MODE_REASON_THROW_COMPLETE,
+    MODE_REASON_PHM_COMMAND
 };
 
 // Tuning enumeration
@@ -422,6 +423,7 @@ enum DevOptions {
 #define ERROR_SUBSYSTEM_NAVIGATION          22
 #define ERROR_SUBSYSTEM_FAILSAFE_TERRAIN    23
 #define ERROR_SUBSYSTEM_EKF_PRIMARY         24
+#define ERROR_SUBSYSTEM_PHM                25
 // general error codes
 #define ERROR_CODE_ERROR_RESOLVED           0
 #define ERROR_CODE_FAILED_TO_INITIALISE     1

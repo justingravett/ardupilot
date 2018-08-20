@@ -502,3 +502,85 @@ void Copter::update_visual_odom()
     }
 #endif
 }
+
+// initialize the PHM device(s)
+void Copter::init_phm()
+{
+    if (!phm.init())
+    {
+        // Make sure the PHM initializes correctly
+        cliSerial->printf("PHM INIT ERROR\n");
+        printf("PHM INIT ERROR\n\r");
+        Log_Write_Error(ERROR_SUBSYSTEM_PHM,ERROR_CODE_FAILED_TO_INITIALISE);
+    }
+}
+
+// respond to PHM status by setting flight mode
+void Copter::phm_set_mode()
+{
+    uint16_t phm_status = phm.get_phm_status().phm_status;
+
+    switch (phm_status) {
+         case phm.PHM_NOMINAL:
+             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Nominal");
+             printf("PHM: Nominal\n\r");
+             set_mode(STABILIZE, MODE_REASON_PHM_COMMAND); // TODO: Determine Proper Flight Mode
+             break;
+
+         case phm.PHM_LOG_FAULT:
+             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Fault Logged");
+             printf("PHM: Fault Logged\n\r");
+             set_mode(STABILIZE, MODE_REASON_PHM_COMMAND); // TODO: Determine Proper Flight Mode
+             break;
+
+         case phm.PHM_WARNING:
+             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Warning");
+             printf("PHM: Warning\n\r");
+             set_mode(STABILIZE, MODE_REASON_PHM_COMMAND); // TODO: Determine Proper Flight Mode
+             break;
+
+         case phm.PHM_LOITER:
+             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Loiter");
+             printf("PHM: Loiter\n\r");
+             set_mode(LOITER, MODE_REASON_PHM_COMMAND);
+             break;
+
+         case phm.PHM_RETURN_HOME:
+             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Return Home");
+             printf("PHM: Return Home\n\r");
+             set_mode(RTL, MODE_REASON_PHM_COMMAND);
+             break;
+
+         case phm.PHM_LAND_NOW:
+             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Land Now");
+             printf("PHM: Land Now\n\r");
+             set_mode(LAND, MODE_REASON_PHM_COMMAND);
+             break;
+
+         case phm.PHM_KILL_MOTORS:
+             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Kill Motors");
+             printf("PHM: Kill Motors\n\r");
+//                set_mode(RTL, MODE_REASON_PHM_COMMAND); // TODO: Determine Proper Flight Mode
+             break;
+    }
+}
+
+// read PHM at 10hz
+void Copter::update_phm()
+{
+    // Read in phm status
+    phm.update();
+
+    // Store the current status in Copter.h
+    uint16_t phm_status = phm.get_phm_status().phm_status;
+
+    // Write PHM status to dataflash logs
+    DataFlash.Log_Write_PHM(phm);
+
+    // Check for a new PHM status. Send alert and change flight mode if changed
+    if (phm.is_new_status()) {
+        printf("New PHM Status: %d\n\r", phm_status);
+
+        phm_set_mode();
+    }
+}
