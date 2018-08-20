@@ -12,10 +12,12 @@
 #include <AP_HAL/Semaphores.h>
 #include <AP_GPS/AP_GPS.h>
 #include <AP_Param/AP_Param.h>
+#include <AP_PHM/AP_PHM.h>
 
 #include <AP_GPS/GPS_Backend.h>
 #include <AP_Baro/AP_Baro_Backend.h>
 #include <AP_Compass/AP_Compass.h>
+#include <AP_PHM/AP_PHM_Backend.h>
 
 #include <uavcan/helpers/heap_based_pool_allocator.hpp>
 
@@ -31,10 +33,11 @@
 #define UAVCAN_RCO_NUMBER 18
 #endif
 
-#define AP_UAVCAN_MAX_LISTENERS 4
-#define AP_UAVCAN_MAX_GPS_NODES 4
-#define AP_UAVCAN_MAX_MAG_NODES 4
-#define AP_UAVCAN_MAX_BARO_NODES 4
+#define AP_UAVCAN_MAX_LISTENERS 5
+#define AP_UAVCAN_MAX_GPS_NODES 5
+#define AP_UAVCAN_MAX_MAG_NODES 5
+#define AP_UAVCAN_MAX_BARO_NODES 5
+#define AP_UAVCAN_MAX_PHM_NODES 5
 
 #define AP_UAVCAN_SW_VERS_MAJOR 1
 #define AP_UAVCAN_SW_VERS_MINOR 0
@@ -89,6 +92,11 @@ public:
     Mag_Info *find_mag_node(uint8_t node);
     void update_mag_state(uint8_t node);
 
+    uint8_t register_phm_listener(AP_PHM_Backend* new_listener, uint8_t preferred_channel);
+    void remove_phm_listener(AP_PHM_Backend* rem_listener);
+    AP_PHM::PHM_Status *find_phm_node(uint8_t node);
+    void update_phm_status(uint8_t node);
+
     // synchronization for RC output
     bool rc_out_sem_take();
     void rc_out_sem_give();
@@ -120,6 +128,13 @@ private:
     Mag_Info _mag_node_state[AP_UAVCAN_MAX_MAG_NODES];
     uint8_t _mag_listener_to_node[AP_UAVCAN_MAX_LISTENERS];
     AP_Compass_Backend* _mag_listeners[AP_UAVCAN_MAX_LISTENERS];
+
+    // ------------------------- PHM
+    uint8_t _phm_nodes[AP_UAVCAN_MAX_PHM_NODES];
+    uint8_t _phm_node_taken[AP_UAVCAN_MAX_PHM_NODES];
+    AP_PHM::PHM_Status _phm_node_status[AP_UAVCAN_MAX_PHM_NODES];
+    uint8_t _phm_listener_to_node[AP_UAVCAN_MAX_LISTENERS];
+    AP_PHM_Backend* _phm_listeners[AP_UAVCAN_MAX_LISTENERS];
 
     struct {
         uint16_t pulse;

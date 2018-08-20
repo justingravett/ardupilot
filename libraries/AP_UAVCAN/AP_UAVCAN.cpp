@@ -25,6 +25,9 @@
 
 #include <AP_BoardConfig/AP_BoardConfig.h>
 
+#include <uavcan/equipment/phm/PHMCmd.hpp>
+#include <uavcan/equipment/phm/PHMStatus.hpp>
+
 extern const AP_HAL::HAL& hal;
 
 #define debug_uavcan(level, fmt, args...) do { if ((level) <= AP_BoardConfig::get_can_debug()) { hal.console->printf(fmt, ##args); }} while (0)
@@ -227,9 +230,30 @@ static void air_data_st_cb(const uavcan::ReceivedDataStructure<uavcan::equipment
     }
 }
 
+// PHM callback
+static uavcan::Subscriber<uavcan::equipment::phm::PHMStatus> *phm_status;
+static void phm_status_cb(const uavcan::ReceivedDataStructure<uavcan::equipment::phm::PHMStatus>& msg)
+{
+    if (hal.can_mgr != nullptr) {
+        AP_UAVCAN *ap_uavcan = hal.can_mgr->get_UAVCAN();
+        if (ap_uavcan != nullptr) {
+            AP_PHM::PHM_Status *status = ap_uavcan->find_phm_node(msg.getSrcNodeID().get());
+            if (status != nullptr) {
+                status->phm_status = msg.phm_status;
+
+                status->last_timestamp = msg.getMonotonicTimestamp().toUSec(); // AP_HAL::micros64();
+
+                // After all is filler, update listeners with new data
+                ap_uavcan->update_phm_status(msg.getSrcNodeID().get());
+            }
+        }
+    }
+}
+
 // publisher interfaces
 static uavcan::Publisher<uavcan::equipment::actuator::ArrayCommand> *act_out_array;
 static uavcan::Publisher<uavcan::equipment::esc::RawCommand> *esc_raw;
+static uavcan::Publisher<uavcan::equipment::phm::PHMCmd>* phm_cmd;
 
 AP_UAVCAN::AP_UAVCAN() :
     _initialized(false), _rco_armed(false), _rco_safety(false), _rc_out_sem(nullptr), _node_allocator(
@@ -256,6 +280,11 @@ AP_UAVCAN::AP_UAVCAN() :
         _mag_node_taken[i] = 0;
     }
 
+    for (uint8_t i = 0; i < AP_UAVCAN_MAX_PHM_NODES; i++) {
+        _phm_nodes[i] = 255;
+        _phm_node_taken[i] = 0;
+    }
+
     for (uint8_t i = 0; i < AP_UAVCAN_MAX_LISTENERS; i++) {
         _gps_listener_to_node[i] = 255;
         _gps_listeners[i] = nullptr;
@@ -265,6 +294,9 @@ AP_UAVCAN::AP_UAVCAN() :
 
         _mag_listener_to_node[i] = 255;
         _mag_listeners[i] = nullptr;
+
+        _phm_listener_to_node[i] = 255;
+        _phm_listeners[i] = nullptr;
     }
 
     _rc_out_sem = hal.util->new_semaphore();
@@ -345,6 +377,21 @@ bool AP_UAVCAN::try_init(void)
                     act_out_array->setTxTimeout(uavcan::MonotonicDuration::fromMSec(20));
                     act_out_array->setPriority(uavcan::TransferPriority::OneLowerThanHighest);
 
+                    hal.console->printf("UAVCAN PHMStatus subscriber starting...\n\r");
+                    phm_status = new uavcan::Subscriber<uavcan::equipment::phm::PHMStatus>(*node);
+                    const int phm_status_start_res = phm_status->start(phm_status_cb);
+                    if (phm_status_start_res < 0) {
+                        debug_uavcan(1, "UAVCAN PHMStatus subscriber start problem\n\r");
+                        printf("UAVCAN PHMStatus subscriber start problem\n\r");
+                        return false;
+                    }
+
+                    // PHM output message publisher
+                    phm_cmd = new uavcan::Publisher<uavcan::equipment::phm::PHMCmd>(*node);
+                    phm_cmd->setTxTimeout(uavcan::MonotonicDuration::fromMSec(20));
+                    phm_cmd->setPriority(uavcan::TransferPriority::OneLowerThanHighest);
+
+
                     esc_raw = new uavcan::Publisher<uavcan::equipment::esc::RawCommand>(*node);
                     esc_raw->setTxTimeout(uavcan::MonotonicDuration::fromMSec(20));
                     esc_raw->setPriority(uavcan::TransferPriority::OneLowerThanHighest);
@@ -394,10 +441,16 @@ void AP_UAVCAN::do_cyclic(void)
 
     if (_initialized) {
         auto *node = get_node();
-        const int error = node->spin(uavcan::MonotonicDuration::fromMSec(1));
+        const int error = node->spin(uavcan::MonotonicDuration::fromMSec(10)); // TODO: Change back to 1?
         if (error < 0) {
             hal.scheduler->delay_microseconds(1000);
         } else {
+
+            // Broadcast PHM message
+            uavcan::equipment::phm::PHMCmd phm_cmd_msg;
+            phm_cmd_msg.phm_mode_cmd = phm_cmd_msg.PHM_TRAINING_MODE; // TODO: update with PHM command message
+            phm_cmd->broadcast(phm_cmd_msg);
+
             if (rc_out_sem_take()) {
                 if (_rco_armed) {
                     bool repeat_send;
@@ -831,6 +884,103 @@ void AP_UAVCAN::update_mag_state(uint8_t node)
             for (uint8_t j = 0; j < AP_UAVCAN_MAX_LISTENERS; j++) {
                 if (_mag_listener_to_node[j] == i) {
                     _mag_listeners[j]->handle_mag_msg(_mag_node_state[i].mag_vector);
+                }
+            }
+        }
+    }
+}
+
+// PHM listener
+uint8_t AP_UAVCAN::register_phm_listener(AP_PHM_Backend* new_listener, uint8_t preferred_channel)
+{
+    uint8_t sel_place = 255, ret = 0;
+    for (uint8_t i = 0; i < AP_UAVCAN_MAX_LISTENERS; i++) {
+        if (_phm_listeners[i] == nullptr) {
+            sel_place = i;
+            break;
+        }
+    }
+
+    if (sel_place != 255) {
+        if (preferred_channel != 0) {
+            if (preferred_channel < AP_UAVCAN_MAX_PHM_NODES) {
+                _phm_listeners[sel_place] = new_listener;
+                _phm_listener_to_node[sel_place] = preferred_channel - 1;
+                _phm_node_taken[_phm_listener_to_node[sel_place]]++;
+                ret = preferred_channel;
+
+                debug_uavcan(1, "UAVCAN reg_PHM place:%d, chan: %d\n\r", sel_place, preferred_channel);
+            }
+        } else {
+            for (uint8_t i = 0; i < AP_UAVCAN_MAX_PHM_NODES; i++) {
+                if (_phm_node_taken[i] == 0) {
+                    _phm_listeners[sel_place] = new_listener;
+                    _phm_listener_to_node[sel_place] = i;
+                    _phm_node_taken[i]++;
+                    ret = i + 1;
+
+                    debug_uavcan(1, "UAVCAN reg_PHM place:%d, chan: %d\n\r", sel_place, i);
+                    break;
+                }
+            }
+        }
+    }
+    if (ret<=0)
+    {
+        printf("Error in AP_UAVCAN::register_phm_listener\n\r");
+        debug_uavcan(1, "UAVCAN reg_PHM place: ERROR\n\r");
+    }
+    return ret;
+
+}
+
+void AP_UAVCAN::remove_phm_listener(AP_PHM_Backend* rem_listener)
+{
+    // Check for all listeners and compare pointers
+    for (uint8_t i = 0; i < AP_UAVCAN_MAX_LISTENERS; i++) {
+        if (_phm_listeners[i] == rem_listener)
+        {
+            _phm_listeners[i] = nullptr;
+
+            // Also decrement usage counter and reset listening node
+            if (_phm_node_taken[_phm_listener_to_node[i]] > 0) {
+                _phm_node_taken[_phm_listener_to_node[i]]--;
+            }
+            _phm_listener_to_node[i] = 255;
+        }
+    }
+}
+
+AP_PHM::PHM_Status *AP_UAVCAN::find_phm_node(uint8_t node)
+{
+    // Check if such node is already defined
+    for (uint8_t i = 0; i < AP_UAVCAN_MAX_PHM_NODES; i++) {
+        if (_phm_nodes[i] == node) {
+            return &_phm_node_status[i];
+        }
+    }
+
+    // If not - try to find free space for it
+    for (uint8_t i = 0; i < AP_UAVCAN_MAX_PHM_NODES; i++) {
+        if (_phm_nodes[i] == 255) {
+
+            _phm_nodes[i] = node;
+            return &_phm_node_status[i];
+        }
+    }
+
+    // If no space is left - return nullptr
+    return nullptr;
+}
+
+void AP_UAVCAN::update_phm_status(uint8_t node)
+{
+    // Go through all listeners of specified node and call their's update methods
+    for (uint8_t i = 0; i < AP_UAVCAN_MAX_PHM_NODES; i++) {
+        if (_phm_nodes[i] == node) {
+            for (uint8_t j = 0; j < AP_UAVCAN_MAX_LISTENERS; j++) {
+                if (_phm_listener_to_node[j] == i) {
+                    _phm_listeners[j]->handle_phm_msg(_phm_node_status[i]);
                 }
             }
         }
