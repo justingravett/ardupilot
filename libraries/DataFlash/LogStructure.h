@@ -41,6 +41,14 @@ struct PACKED log_Parameter {
     float value;
 };
 
+struct PACKED log_PHM_Status {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint16_t phm_status;
+    uint8_t update_counter;
+    uint64_t last_timestamp;
+};
+
 struct PACKED log_GPS {
     LOG_PACKET_HEADER;
     uint64_t time_us;
@@ -1080,7 +1088,10 @@ Format characters in the format string for binary log messages
     { LOG_RALLY_MSG, sizeof(log_Rally), \
       "RALY", "QBBLLh", "TimeUS,Tot,Seq,Lat,Lng,Alt" }, \
     { LOG_VISUALODOM_MSG, sizeof(log_VisualOdom), \
-      "VISO", "Qffffffff", "TimeUS,dt,AngDX,AngDY,AngDZ,PosDX,PosDY,PosDZ,conf" }
+      "VISO", "Qffffffff", "TimeUS,dt,AngDX,AngDY,AngDZ,PosDX,PosDY,PosDZ,conf" }, \
+    { LOG_PHM_STATUS_MSG, sizeof(log_PHM_Status), \
+      "PHM", "QBBQ", "TimeUS,PHM_Status,UpdateCounter,LastTimestamp" }
+
 
 // #if SBP_HW_LOGGING
 #define LOG_SBP_STRUCTURES \
@@ -1213,6 +1224,8 @@ enum LogMessages {
     LOG_VISUALODOM_MSG,
     LOG_AOA_SSA_MSG,
     LOG_BEACON_MSG,
+
+    LOG_PHM_STATUS_MSG
 };
 
 enum LogOriginType {
