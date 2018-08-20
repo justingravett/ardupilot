@@ -678,6 +678,23 @@ void DataFlash_Class::Log_Write_GPS(const AP_GPS &gps, uint8_t i, uint64_t time_
     WriteBlock(&pkt2, sizeof(pkt2));
 }
 
+void DataFlash_Class::Log_Write_PHM(const AP_PHM &phm, uint64_t time_us)
+{
+    if (time_us == 0) {
+        time_us = AP_HAL::micros64();
+    }
+
+    const AP_PHM::PHM_Status &status = phm.get_phm_status();
+    struct log_PHM_Status pkt = {
+            LOG_PACKET_HEADER_INIT(LOG_PHM_STATUS_MSG),
+            time_us         : time_us,
+            phm_status      : status.phm_status,
+            update_counter  : status.update_counter,
+            last_timestamp  : status.last_timestamp
+    };
+
+    WriteBlock(&pkt, sizeof(pkt));
+}
 
 // Write an RFND (rangefinder) packet
 void DataFlash_Class::Log_Write_RFND(const RangeFinder &rangefinder)

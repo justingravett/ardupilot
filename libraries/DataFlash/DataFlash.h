@@ -7,6 +7,7 @@
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_GPS/AP_GPS.h>
+#include <AP_PHM/AP_PHM.h>
 #include <AP_InertialSensor/AP_InertialSensor.h>
 #include <AP_RSSI/AP_RSSI.h>
 #include <AP_Baro/AP_Baro.h>
@@ -114,6 +115,7 @@ public:
 
     void Log_Write_Parameter(const char *name, float value);
     void Log_Write_GPS(const AP_GPS &gps, uint8_t instance, uint64_t time_us=0);
+    void Log_Write_PHM(const AP_PHM &phm, uint64_t time_us=0);
     void Log_Write_RFND(const RangeFinder &rangefinder);
     void Log_Write_IMU(const AP_InertialSensor &ins);
     void Log_Write_IMUDT(const AP_InertialSensor &ins, uint64_t time_us, uint8_t imu_mask);
