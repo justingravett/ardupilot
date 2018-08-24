@@ -518,51 +518,103 @@ void Copter::init_phm()
 // respond to PHM status by setting flight mode
 void Copter::phm_set_mode()
 {
+    // Ignore all PHM commands if vehicle is in Stabilize mode
+    if (control_mode == STABILIZE) {
+        gcs_send_text(MAV_SEVERITY_ALERT, "All PHM Commands Ignored in Stabilize Mode.");
+        return;
+    }
+
     uint16_t phm_status = phm.get_phm_status().phm_status;
+    control_mode_t fault_mode = ALT_HOLD;
+    char new_mode[20];
 
     switch (phm_status) {
          case phm.PHM_NOMINAL:
-             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Nominal");
-             printf("PHM: Nominal\n\r");
-             set_mode(STABILIZE, MODE_REASON_PHM_COMMAND); // TODO: Determine Proper Flight Mode
+             gcs_send_text(MAV_SEVERITY_ALERT, "Health State Criticality: Nominal");
+             printf("Health State Criticality: Nominal\n\r");
+             fault_mode = ALT_HOLD;
+             strcpy(new_mode, "ALT_HOLD");
              break;
 
          case phm.PHM_LOG_FAULT:
-             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Fault Logged");
-             printf("PHM: Fault Logged\n\r");
-             set_mode(STABILIZE, MODE_REASON_PHM_COMMAND); // TODO: Determine Proper Flight Mode
+             gcs_send_text(MAV_SEVERITY_ALERT, "Health State Criticality: Insignificant");
+             printf("Health State Criticality: Insignificant\n\r");
+             fault_mode = ALT_HOLD;
+             strcpy(new_mode, "ALT_HOLD");
              break;
 
          case phm.PHM_WARNING:
-             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Warning");
-             printf("PHM: Warning\n\r");
-             set_mode(STABILIZE, MODE_REASON_PHM_COMMAND); // TODO: Determine Proper Flight Mode
+             gcs_send_text(MAV_SEVERITY_ALERT, "Health State Criticality: Trivial");
+             printf("Health State Criticality: Trivial\n\r");
+             fault_mode = ALT_HOLD;
+             strcpy(new_mode, "ALT_HOLD");
              break;
 
          case phm.PHM_LOITER:
-             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Loiter");
-             printf("PHM: Loiter\n\r");
-             set_mode(LOITER, MODE_REASON_PHM_COMMAND);
+             gcs_send_text(MAV_SEVERITY_ALERT, "Health State Criticality: Minor");
+             printf("Health State Criticality: Minor\n\r");
+             fault_mode = LOITER;
+             strcpy(new_mode, "LOITER");
              break;
 
          case phm.PHM_RETURN_HOME:
-             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Return Home");
-             printf("PHM: Return Home\n\r");
-             set_mode(RTL, MODE_REASON_PHM_COMMAND);
+             gcs_send_text(MAV_SEVERITY_ALERT, "Health State Criticality: Moderate");
+             printf("Health State Criticality: Moderate\n\r");
+             fault_mode = RTL;
+             strcpy(new_mode, "RTL");
              break;
 
          case phm.PHM_LAND_NOW:
-             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Land Now");
-             printf("PHM: Land Now\n\r");
-             set_mode(LAND, MODE_REASON_PHM_COMMAND);
+             gcs_send_text(MAV_SEVERITY_ALERT, "Health State Criticality: Major");
+             printf("Health State Criticality: Major\n\r");
+             fault_mode = LAND;
+             strcpy(new_mode, "LAND");
              break;
 
          case phm.PHM_KILL_MOTORS:
-             gcs_send_text(MAV_SEVERITY_ALERT, "PHM: Kill Motors");
-             printf("PHM: Kill Motors\n\r");
-//                set_mode(RTL, MODE_REASON_PHM_COMMAND); // TODO: Determine Proper Flight Mode
-             break;
+             gcs_send_text(MAV_SEVERITY_ALERT, "Health State Criticality: Extreme");
+             printf("Health State Criticality: Extreme\n\r");
+
+             // stop motors
+             motors->set_desired_spool_state(AP_Motors::DESIRED_SHUT_DOWN);
+             motors->output();
+
+             // disarm as well
+             init_disarm_motors();
+
+             // and set all aux channels
+             SRV_Channels::set_output_limit(SRV_Channel::k_heli_rsc, SRV_Channel::SRV_CHANNEL_LIMIT_TRIM);
+             SRV_Channels::set_output_limit(SRV_Channel::k_heli_tail_rsc, SRV_Channel::SRV_CHANNEL_LIMIT_TRIM);
+             SRV_Channels::set_output_limit(SRV_Channel::k_engine_run_enable, SRV_Channel::SRV_CHANNEL_LIMIT_TRIM);
+             SRV_Channels::set_output_limit(SRV_Channel::k_ignition, SRV_Channel::SRV_CHANNEL_LIMIT_TRIM);
+             SRV_Channels::set_output_limit(SRV_Channel::k_none, SRV_Channel::SRV_CHANNEL_LIMIT_TRIM);
+             SRV_Channels::set_output_limit(SRV_Channel::k_manual, SRV_Channel::SRV_CHANNEL_LIMIT_TRIM);
+
+             SRV_Channels::output_ch_all();
+
+             gcs_send_text(MAV_SEVERITY_ALERT, "\tMOTORS KILLED");
+             return;
     }
+
+    // Set mode if current mode is ranked with less severity than desired set fault mode
+    if (phm_mode_rank(control_mode) < phm_mode_rank(fault_mode)) {
+        if (set_mode(fault_mode, MODE_REASON_PHM_COMMAND)) {
+            char message[50] = "\tFlight Mode Updated: ";
+            strcat(message, new_mode);
+            gcs_send_text(MAV_SEVERITY_ALERT, message);
+            strcat(message, "\n\r");
+            printf(message);
+        }
+        else {
+            gcs_send_text(MAV_SEVERITY_ALERT, "\tERROR: Failed to Update Flight Mode");
+            printf("\tERROR: Failed to Update Flight Mode\n\r");
+        }
+    }
+    else {
+        gcs_send_text(MAV_SEVERITY_ALERT, "\tFlight Mode Unchanged by Detected Fault");
+        printf("\tFlight Mode Unchanged by Detected Fault\n\r");
+    }
+}
 
 // Auto pilot modes ordered from lowest to highest severity
 int Copter::phm_mode_rank(control_mode_t mode) {
@@ -577,13 +629,13 @@ int Copter::phm_mode_rank(control_mode_t mode) {
         case FLIP:
         case AUTOTUNE:
         case GUIDED_NOGPS:
+        case THROW:
             return 0;
         case LOITER:
         case CIRCLE:
         case POSHOLD:
         case BRAKE:
         case AVOID_ADSB:
-        case THROW:
             return 1;
         case RTL:
             return 2;
