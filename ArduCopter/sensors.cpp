@@ -563,6 +563,34 @@ void Copter::phm_set_mode()
 //                set_mode(RTL, MODE_REASON_PHM_COMMAND); // TODO: Determine Proper Flight Mode
              break;
     }
+
+// Auto pilot modes ordered from lowest to highest severity
+int Copter::phm_mode_rank(control_mode_t mode) {
+    switch (mode) {
+        case STABILIZE:
+        case ACRO:
+        case ALT_HOLD:
+        case AUTO:
+        case GUIDED:
+        case DRIFT:
+        case SPORT:
+        case FLIP:
+        case AUTOTUNE:
+        case GUIDED_NOGPS:
+            return 0;
+        case LOITER:
+        case CIRCLE:
+        case POSHOLD:
+        case BRAKE:
+        case AVOID_ADSB:
+        case THROW:
+            return 1;
+        case RTL:
+            return 2;
+        case LAND:
+            return 3;
+    }
+    return -1;
 }
 
 // read PHM at 10hz

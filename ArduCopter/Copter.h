@@ -654,6 +654,7 @@ private:
     void update_phm();
     void init_phm();
     void phm_set_mode();
+    int phm_mode_rank(control_mode_t mode);
     void init_simple_bearing();
     void update_simple_mode(void);
     void update_super_simple_bearing(bool force_update);
