@@ -27,6 +27,7 @@
 
 #include <uavcan/equipment/phm/PHMCmd.hpp>
 #include <uavcan/equipment/phm/PHMStatus.hpp>
+#include <uavcan/equipment/phm/ESCCmd.hpp>
 
 extern const AP_HAL::HAL& hal;
 
@@ -252,7 +253,7 @@ static void phm_status_cb(const uavcan::ReceivedDataStructure<uavcan::equipment:
 
 // publisher interfaces
 static uavcan::Publisher<uavcan::equipment::actuator::ArrayCommand> *act_out_array;
-static uavcan::Publisher<uavcan::equipment::esc::RawCommand> *esc_raw;
+static uavcan::Publisher<uavcan::equipment::phm::ESCCmd> *esc_raw;
 static uavcan::Publisher<uavcan::equipment::phm::PHMCmd>* phm_cmd;
 
 AP_UAVCAN::AP_UAVCAN() :
@@ -392,7 +393,7 @@ bool AP_UAVCAN::try_init(void)
                     phm_cmd->setPriority(uavcan::TransferPriority::OneLowerThanHighest);
 
 
-                    esc_raw = new uavcan::Publisher<uavcan::equipment::esc::RawCommand>(*node);
+                    esc_raw = new uavcan::Publisher<uavcan::equipment::phm::ESCCmd>(*node);
                     esc_raw->setTxTimeout(uavcan::MonotonicDuration::fromMSec(20));
                     esc_raw->setPriority(uavcan::TransferPriority::OneLowerThanHighest);
 
@@ -505,7 +506,6 @@ void AP_UAVCAN::do_cyclic(void)
                     // if we have any ESC's in bitmask
                     if (_esc_bm > 0) {
                         static const int cmd_max = uavcan::equipment::esc::RawCommand::FieldTypes::cmd::RawValueType::max();
-                        uavcan::equipment::esc::RawCommand esc_msg;
 
                         uint8_t active_esc_num = 0, max_esc_num = 0;
                         uint8_t k = 0;
@@ -524,8 +524,15 @@ void AP_UAVCAN::do_cyclic(void)
                         if (active_esc_num > 0) {
                             k = 0;
 
+                            // Number of can frames to send all ESC raw commands without using multi-frame protocol
+                            int num_esc_frames = int(ceil(max_esc_num/3)); // 3 ESC commands per frame
+                            uavcan::equipment::phm::ESCCmd esc_msg[num_esc_frames];
+
                             for (uint8_t i = 0; i < max_esc_num && k < 20; i++) {
-                                uavcan::equipment::actuator::Command cmd;
+
+                                if (i%3 == 0) {
+                                    esc_msg[int(floor(i/3))].primary_esc_index = i;
+                                }
 
                                 if ((((uint32_t) 1) << i) & _esc_bm) {
                                     // TODO: ESC negative scaling for reverse thrust and reverse rotation
@@ -533,15 +540,17 @@ void AP_UAVCAN::do_cyclic(void)
 
                                     scaled = constrain_float(scaled, 0, cmd_max);
 
-                                    esc_msg.cmd.push_back(static_cast<int>(scaled));
+                                    esc_msg[int(floor(i/3))].cmd.push_back(static_cast<int>(scaled));
                                 } else {
-                                    esc_msg.cmd.push_back(static_cast<unsigned>(0));
+                                    esc_msg[int(floor(i/3))].cmd.push_back(static_cast<unsigned>(0));
                                 }
 
                                 k++;
                             }
 
-                            esc_raw->broadcast(esc_msg);
+                            for (uint8_t i = 0; i < num_esc_frames; i++) {
+                                esc_raw->broadcast(esc_msg[i]);
+                            }
                         }
                     }
                 }
