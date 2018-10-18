@@ -7,6 +7,10 @@
 #include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
 
+// Debug includes
+#include <vector>
+#include <numeric>
+
 #if HAL_WITH_UAVCAN
 
 #include "AP_UAVCAN.h"
@@ -447,18 +451,33 @@ void AP_UAVCAN::do_cyclic(void)
             hal.scheduler->delay_microseconds(1000);
         } else {
 
-            // Broadcast PHM message
-            uavcan::equipment::phm::PHMCmd phm_cmd_msg;
-            phm_cmd_msg.phm_mode_cmd = phm_cmd_msg.PHM_TRAINING_MODE; // TODO: update with PHM command message
-            phm_cmd->broadcast(phm_cmd_msg);
+//            // Broadcast PHM message
+//            uavcan::equipment::phm::PHMCmd phm_cmd_msg;
+//            phm_cmd_msg.phm_mode_cmd = phm_cmd_msg.PHM_TRAINING_MODE; // TODO: update with PHM command message
+//            phm_cmd->broadcast(phm_cmd_msg);
 
             if (rc_out_sem_take()) {
-                if (_rco_armed) {
+                if (_rco_armed) { // NOTE: Set to true if unable to arm for benchtop test (_rco_armed)
                     bool repeat_send;
 
                     // if we have any Servos in bitmask
                     if (_servo_bm > 0) {
                         uint8_t starting_servo = 0;
+
+                        uint8_t max_servo_num = 0;
+
+                        // find out how many ESCs we have enabled and if they are active at all
+                        for (uint8_t i = 0; i < UAVCAN_RCO_NUMBER; i++) {
+                            if ((((uint32_t) 1) << i) & _servo_bm) {
+                                max_servo_num = i + 1;
+                            }
+                        }
+
+                        // Number of can frames to send all ESC raw commands without using multi-frame protocol
+                        int num_esc_frames = int(ceil(max_servo_num/3)); // 3 ESC commands per frame
+                        uavcan::equipment::phm::ESCCmd esc_msg[num_esc_frames];
+
+                        int cmd_count = 0;
 
                         do {
                             repeat_send = false;
@@ -479,38 +498,54 @@ void AP_UAVCAN::do_cyclic(void)
                                  */
 
                                 if (_rco_conf[starting_servo].active && ((((uint32_t) 1) << starting_servo) & _servo_bm)) {
-                                    cmd.actuator_id = starting_servo + 1;
+
+                                    if (cmd_count%3 == 0) {
+                                        esc_msg[int(floor(cmd_count/3))].primary_esc_index = int(floor(cmd_count/3));
+                                    }
+
+                                    //cmd.actuator_id = starting_servo + 1;
 
                                     // TODO: other types
-                                    cmd.command_type = uavcan::equipment::actuator::Command::COMMAND_TYPE_UNITLESS;
+                                    //cmd.command_type = uavcan::equipment::actuator::Command::COMMAND_TYPE_UNITLESS;
 
                                     // TODO: failsafe, safety
-                                    cmd.command_value = constrain_float(((float) _rco_conf[starting_servo].pulse - 1000.0) / 500.0 - 1.0, -1.0, 1.0);
+                                    //cmd.command_value = constrain_float(((float) _rco_conf[starting_servo].pulse - 1000.0) / 500.0 - 1.0, -1.0, 1.0);
 
-                                    msg.commands.push_back(cmd);
+                                    //msg.commands.push_back(cmd);
 
+                                    // Send unscaled PWM
+                                    esc_msg[int(floor(cmd_count/3))].cmd.push_back(static_cast<int>(_rco_conf[starting_servo].pulse));
+
+                                    cmd_count++;
                                     i++;
                                 }
                             }
 
                             if (i > 0) {
-                                act_out_array->broadcast(msg);
+                                //act_out_array->broadcast(msg);
 
                                 if (i == 15) {
                                     repeat_send = true;
                                 }
                             }
                         } while (repeat_send);
+
+                        //for (uint8_t j = 0; j < num_esc_frames; j++) {
+                            //esc_raw->broadcast(esc_msg[1]);
+                        //}
+                        if (esc_msg[0].cmd.size() > 0) {
+                            esc_raw->broadcast(esc_msg[0]);
+                        }
                     }
 
                     // if we have any ESC's in bitmask
                     if (_esc_bm > 0) {
-                        static const int cmd_max = uavcan::equipment::esc::RawCommand::FieldTypes::cmd::RawValueType::max();
+                        //static const int cmd_max = uavcan::equipment::esc::RawCommand::FieldTypes::cmd::RawValueType::max();
 
                         uint8_t active_esc_num = 0, max_esc_num = 0;
                         uint8_t k = 0;
 
-                        // find out how many esc we have enabled and if they are active at all
+                        // find out how many ESCs we have enabled and if they are active at all
                         for (uint8_t i = 0; i < UAVCAN_RCO_NUMBER; i++) {
                             if ((((uint32_t) 1) << i) & _esc_bm) {
                                 max_esc_num = i + 1;
@@ -528,6 +563,10 @@ void AP_UAVCAN::do_cyclic(void)
                             int num_esc_frames = int(ceil(max_esc_num/3)); // 3 ESC commands per frame
                             uavcan::equipment::phm::ESCCmd esc_msg[num_esc_frames];
 
+                            //// DEBUG Code:
+                            //std::vector<int> esc_ids(max_esc_num);
+                            //std::iota (std::begin(esc_ids), std::end(esc_ids), 0); // Fill with 0, 1, ..., 99. -> identify ESCs
+
                             for (uint8_t i = 0; i < max_esc_num && k < 20; i++) {
 
                                 if (i%3 == 0) {
@@ -536,11 +575,14 @@ void AP_UAVCAN::do_cyclic(void)
 
                                 if ((((uint32_t) 1) << i) & _esc_bm) {
                                     // TODO: ESC negative scaling for reverse thrust and reverse rotation
-                                    float scaled = cmd_max * (hal.rcout->scale_esc_to_unity(_rco_conf[i].pulse) + 1.0) / 2.0;
+                                    //float scaled = cmd_max * (hal.rcout->scale_esc_to_unity(_rco_conf[i].pulse) + 1.0) / 2.0;
 
-                                    scaled = constrain_float(scaled, 0, cmd_max);
+                                    //scaled = constrain_float(scaled, 0, cmd_max);
 
-                                    esc_msg[int(floor(i/3))].cmd.push_back(static_cast<int>(scaled));
+                                    //esc_msg[int(floor(i/3))].cmd.push_back(static_cast<int>(esc_ids[i]));
+
+                                    // Send unscaled PWM
+                                    esc_msg[int(floor(i/3))].cmd.push_back(static_cast<int>(_rco_conf[i].pulse));
                                 } else {
                                     esc_msg[int(floor(i/3))].cmd.push_back(static_cast<unsigned>(0));
                                 }
