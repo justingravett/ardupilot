@@ -35,8 +35,7 @@ public:
 
     struct PHM_Status {
         uint16_t phm_status;
-        uint8_t update_counter;
-        uint64_t last_timestamp;
+        // TODO: Add update counter and last timestamp
     };
 
     /// PHM status codes
@@ -58,13 +57,6 @@ public:
     PHM_Status get_last_phm_status(uint8_t instance) const { return last_status[instance]; }
 
     bool is_new_status(void) const { return new_status; }
-
-    // get last time sample was taken (in ms)
-    uint64_t get_last_update(void) const { return get_last_update(primary_instance); }
-    uint64_t get_last_update(uint8_t instance) const { return status[instance].last_timestamp; }
-
-//    // settable parameters
-//    static const struct AP_Param::GroupInfo var_info[];
 
     // return number of registered PHMs
     uint8_t get_num_instances(void) const { return num_instances; }

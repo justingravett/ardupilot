@@ -689,8 +689,6 @@ void DataFlash_Class::Log_Write_PHM(const AP_PHM &phm, uint64_t time_us)
             LOG_PACKET_HEADER_INIT(LOG_PHM_STATUS_MSG),
             time_us         : time_us,
             phm_status      : status.phm_status,
-            update_counter  : status.update_counter,
-            last_timestamp  : status.last_timestamp
     };
 
     WriteBlock(&pkt, sizeof(pkt));

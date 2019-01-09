@@ -19,7 +19,6 @@
 AP_PHM_Backend::AP_PHM_Backend(AP_PHM &_phm, AP_PHM::PHM_Status &_status) : phm(_phm), status(_status)
 {
     status.phm_status = 0; // Initialize to nominal
-    status.update_counter = 0;
 
     _new_status = false;
 }

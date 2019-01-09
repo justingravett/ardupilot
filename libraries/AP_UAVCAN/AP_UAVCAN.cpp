@@ -246,8 +246,6 @@ static void phm_status_cb(const uavcan::ReceivedDataStructure<uavcan::equipment:
             if (status != nullptr) {
                 status->phm_status = msg.phm_status;
 
-                status->last_timestamp = msg.getMonotonicTimestamp().toUSec(); // AP_HAL::micros64();
-
                 // After all is filler, update listeners with new data
                 ap_uavcan->update_phm_status(msg.getSrcNodeID().get());
             }

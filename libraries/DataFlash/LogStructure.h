@@ -45,8 +45,6 @@ struct PACKED log_PHM_Status {
     LOG_PACKET_HEADER;
     uint64_t time_us;
     uint16_t phm_status;
-    uint8_t update_counter;
-    uint64_t last_timestamp;
 };
 
 struct PACKED log_GPS {
@@ -1090,7 +1088,7 @@ Format characters in the format string for binary log messages
     { LOG_VISUALODOM_MSG, sizeof(log_VisualOdom), \
       "VISO", "Qffffffff", "TimeUS,dt,AngDX,AngDY,AngDZ,PosDX,PosDY,PosDZ,conf" }, \
     { LOG_PHM_STATUS_MSG, sizeof(log_PHM_Status), \
-      "PHM", "QBBQ", "TimeUS,PHM_Status,UpdateCounter,LastTimestamp" }
+      "PHM", "QB", "TimeUS,PHM_Status" }
 
 
 // #if SBP_HW_LOGGING
